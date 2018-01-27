@@ -1,0 +1,236 @@
+---
+title: "Higher Education Benchmarking (Beta)"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+runtime: shiny
+---
+
+
+
+```{r setup, include=FALSE}
+# https://arie.shinyapps.io/benchmark/
+# To Do
+# move file preparation to other script
+# incorporate linkedin suggestions
+
+library(tidyverse)
+library(cluster)
+library(flexdashboard)
+library(shiny)
+
+df <- read.csv("data/Data_1-9-2018---128.csv") %>% 
+  select(UnitID, name = Institution.Name,
+         sector = Sector.of.institution..HD2016.,
+         `Percent Admitted (Total), 2016-2017` = Percent.admitted...total..DRVADM2016.,
+         `Full-Time Retention Rate, Fall 2016` = Full.time.retention.rate..2016..EF2016D.,
+         `SAT Reading 25th Percentile, 2016-2017` = SAT.Critical.Reading.25th.percentile.score..ADM2016.,
+         `SAT Reading 75th Percentile, 2016-2017` = SAT.Critical.Reading.75th.percentile.score..ADM2016.,
+         `SAT Math 25th Percentile, 2016-2017` = SAT.Math.25th.percentile.score..ADM2016.,
+         `SAT Math 75th Percentile, 2016-2017` = SAT.Math.75th.percentile.score..ADM2016.,
+         `Graduation Rate (Total Cohort), 2016-2017` = Graduation.rate..total.cohort..DRVGR2016.,
+         `Out-of-State Tuition & Fees, 2016-2017` = Published.out.of.state.tuition.and.fees.2016.17..IC2016_AY.,
+         `In-State Tuition & Fees, 2016-2017` = Published.in.state.tuition.and.fees.2016.17..IC2016_AY.,
+         `Undergraduate Headcount, Fall 2016` = Grand.total..EF2016..All.students..Undergraduate.total.,
+         `Grad/Prof Headcount, Fall 2016` = Grand.total..EF2016..All.students..Graduate.and.First.professional.,
+          `Law Degrees/Certificates Awarded, 2015-2016` = Grand.total..C2016_A..First.major..Law..Degrees.certificates.total.,
+         `Chiropractic Degrees/Certificates Awarded, 2015-2016` = Grand.total..C2016_A..First.major..Chiropractic..Degrees.certificates.total.,
+         `Dentistry Degrees/Certificates Awarded, 2015-2016` = Grand.total..C2016_A..First.major..Dentistry..Degrees.certificates.total.,
+         `Medicine Degrees/Certificates Awarded, 2015-2016` = Grand.total..C2016_A..First.major..Medicine..Degrees.certificates.total.,
+         `Optometry Degrees/Certificates Awarded, 2015-2016` = Grand.total..C2016_A..First.major..Optometry..Degrees.certificates.total.,
+         `Osteopathic Degrees/Certificates Awarded, 2015-2016` = Grand.total..C2016_A..First.major..Osteopathic.Medicine.Osteopathy..Degrees.certificates.total.,
+         `Pharmacy Degrees/Certificates Awarded, 2015-2016` =  Grand.total..C2016_A..First.major..Pharmacy..Degrees.certificates.total.,
+         `Podiatric Degrees/Certificates Awarded, 2015-2016` = Grand.total..C2016_A..First.major..Podiatric.Medicine.Podiatry..Degrees.certificates.total.,
+         `Veterinary Degrees/Certificates Awarded, 2015-2016` = Grand.total..C2016_A..First.major..Veterinary.Medicine..Degrees.certificates.total.) %>% 
+  mutate(name = paste0(name, " (", UnitID, ")")) %>% 
+  select(-UnitID)
+
+sector <- df %>% 
+  select(name, sector)
+
+
+value <- read.csv("data/ValueLabels_1-9-2018---128.csv") %>% 
+  select(sector = Value, sector_label = ValueLabel)
+
+
+sector <- left_join(sector, value, by = "sector") 
+
+df$sector <- NULL
+
+
+options(shiny.error = function() {
+  stop("This analysis requires that the selected school does not contain missing data in any of the columns selected. Thus, either choose different columns or a different school.")
+})
+
+
+```
+
+
+Benchmark
+=======================================================================
+
+
+
+
+Inputs {.sidebar}
+-----------------------------------------------------------------------
+
+This app uses data from the IPEDS Data Center and performs k-means clustering based on the inputs selected. The goal is to help identify - for benchmarking purposes - postsecondary institutions that are similar to one another.
+
+```{r}
+
+selectInput("select", 
+            strong("Select Columns to Include in the K-Means Cluster Analysis (Multiple Selections Allowed):"), 
+            df %>% select(-name) %>% names(), 
+            multiple = TRUE)
+
+
+selectInput("sector", strong("Limit K-Means Analysis to The Following Sectors (Multiple Selections Allowed):"),
+                    c("Administrative Unit" = 0,
+                   "Public, 4-year or above" = 1,
+                   "Private not-for-profit, 4-year or above" = 2,
+                   "Private for-profit, 4-year or above" = 3,
+                   "Public, 2-year" = 4,
+                   "Private not-for-profit, 2-year" = 5,
+                   "Private for-profit, 2-year" = 6,
+                   "Public, less-than 2-year" = 7,
+                   "Private not-for-profit, less-than 2-year" = 8,
+                   "Private for-profit, less-than 2-year" = 9
+                   ), selected = 2, multiple = TRUE)
+
+
+numericInput("clusters", 
+             strong("Select the Number of Groups the K-Means Analysis Should Produce:"), 
+             3, min = 2, max = 10)
+
+
+selectizeInput(inputId = "select_school",  choices = df$name, 
+                  selected = "Nova Southeastern University (136215)",
+               label = strong("Only Include the Group that Clusters With the Following School Based on the K-Means Analysis (One Selection Only):"),
+ options = list(placeholder = "Type Institution Name",
+    maxOptions = 10000)
+  )
+
+
+```
+
+
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+
+
+
+```{r, include - FALSE}
+
+
+
+selectedData <- reactive({
+{
+      columns <- df %>% select(-name) %>% names()
+      if (!is.null(input$select)) {
+        columns <- input$select
+      }
+      
+      if (is.null(input$select)) {
+        columns <- df  %>% select(`Undergraduate Headcount, Fall 2016`, `Grad/Prof Headcount, Fall 2016`) %>% 
+          names()
+      }
+
+     df  %>%
+          select(name, columns) %>%
+          column_to_rownames(var="name")
+
+}
+    })
+
+
+
+
+```
+
+
+
+```{r, include = FALSE}
+
+kmeans_data <- reactive({
+ selectedData() %>% 
+  na.omit() %>% 
+  scale() %>% 
+  data.frame()
+ })
+
+```
+
+### K-Means Results
+
+```{r}
+
+kmeans_results <-  reactive({
+    set.seed(10)
+  kmeans(kmeans_data(), centers = input$clusters)
+})
+
+kmeans_groups <- reactive({
+  kmeans_results()$cluster %>%
+  data.frame() %>% 
+   rownames_to_column() %>% 
+   rename(name = rowname)
+})
+
+
+
+final_table <- reactive({
+  left_join(kmeans_groups(), 
+            selectedData() %>% rownames_to_column() %>% rename(name = rowname), 
+            by = "name")
+})
+
+
+final_table_2 <- reactive({
+
+  rename(final_table(), cluster = `.`)
+
+})
+
+
+selected_school <- reactive({
+      
+  input$select_school
+  })
+
+selected_school_cluster <- reactive({
+
+  final_table_2()[final_table_2()$name == selected_school(), "cluster"] 
+
+
+})
+
+
+renderTable({
+  
+t <- final_table_2() %>% 
+  left_join(sector, by = "name") %>% 
+  filter(cluster == selected_school_cluster() & 
+           sector %in% input$sector) %>% 
+  select(-cluster, -sector, -sector_label) %>% 
+  rename(Institution = name)
+
+print(t)
+  
+}
+  )
+
+
+```
+
+
+
+About
+=======================================================================
+
+This app was created using the R programming language and the following R packages: `cluster`, `flexdashboard`, `shiny`, `tidyverse`.
+
+For questions about this app, please contact Arie Spirgel at spirgel@gmail.com.

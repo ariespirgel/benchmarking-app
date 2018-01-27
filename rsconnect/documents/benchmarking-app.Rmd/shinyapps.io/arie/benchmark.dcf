@@ -1,0 +1,10 @@
+name: benchmark
+title: benchmark
+account: arie
+server: shinyapps.io
+appId: 256840
+bundleId: 1177072
+url: https://arie.shinyapps.io/benchmark/
+when: 1516036375.4642
+asMultiple: FALSE
+asStatic: FALSE
