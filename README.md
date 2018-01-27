@@ -1,2 +1,2 @@
 # benchmarking-app
-shiny app for identifying higher ed institutions to benchmark
+Shiny app for identifying higher education institutions to benchmark against.
